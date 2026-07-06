@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install *)",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"compile\\(open\\(r'c:\\\\Users\\\\天桥短剧\\\\Desktop\\\\streamlit-learn-main\\\\05-ai_partner-4.py', encoding='utf-8'\\).read\\(\\), '05-ai_partner-4.py', 'exec'\\); print\\('OK'\\)\")"
+    ]
+  }
+}

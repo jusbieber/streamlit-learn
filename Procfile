@@ -1,0 +1,1 @@
+web: streamlit run 05-ai_partner-4.py --server.port 8080 --server.headless true
