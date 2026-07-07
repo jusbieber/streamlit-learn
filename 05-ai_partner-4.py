@@ -8,7 +8,7 @@ from datetime import datetime
 # 设置页面配置
 st.set_page_config(
     page_title="电子小人",   #网页标题
-    page_icon="🧊",   #网页图标，emoji
+    page_icon="💭",   #网页图标，emoji
     #布局
     layout="wide",
     #控制侧边栏状态
@@ -125,7 +125,7 @@ def generate_session_name():
     return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 # 大标题
-st.title('fufu - 你的可爱AI伴侣')
+st.title('')
 
 # logo
 st.logo('resource/6.png')
@@ -179,7 +179,7 @@ if "system_prompt" not in st.session_state:
 # 左侧的侧边栏
 with st.sidebar:
     # AI控制面板
-    st.subheader("AI控制面板")
+    st.subheader("控制面板")
 
     # 新建对话
     if st.button("新建对话",width="stretch",icon="💬"):
@@ -211,7 +211,7 @@ with st.sidebar:
     st.divider()
 
     # 伴侣信息
-    st.subheader("伴侣信息")
+    st.subheader("信息")
     # 昵称输入框
     nike_name = st.text_input("昵称",placeholder="请输入昵称",value=st.session_state.nike_name)
     # 性格输入框
@@ -220,14 +220,13 @@ with st.sidebar:
     # 分割线
     st.divider()
 
-    # 系统提示词编辑
-    st.subheader("系统提示词")
-    st.caption("可使用 {nike_name} 和 {nature} 作为占位符，发送时会自动替换")
+    # 人设编辑
+    st.subheader("人设")
     system_prompt_input = st.text_area(
-        "系统提示词",
+        "人设",
         value=st.session_state.system_prompt,
         height=400,
-        placeholder="请输入系统提示词...",
+        placeholder="请输入人设...",
         label_visibility="collapsed"
     )
     # 更新 session_state
@@ -237,11 +236,40 @@ with st.sidebar:
     st.session_state.nature = nature
 
 
+# 搜索结果的CSS样式（统一小号字体）
+st.markdown("""
+<style>
+.search-box {
+    font-size: 0.8rem;
+    color: #888;
+    border-left: 2px solid #ddd;
+    padding-left: 8px;
+    margin: 4px 0;
+}
+.search-box a {
+    font-size: 0.75rem;
+    color: #666;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # 展示聊天信息
 st.text(f"聊天信息: {st.session_state.current_session}")
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"].replace("~", "\\~"))
+        # 如果有搜索内容，显示可折叠的搜索详情
+        if message.get("search_results"):
+            with st.expander(f"🔍 已搜索到 {len(message['search_results'])} 条相关信息", expanded=False):
+                for i, r in enumerate(message["search_results"], 1):
+                    st.markdown(
+                        f"""<div class="search-box">
+                        <b>[{i}] {r.get('title', '')}</b><br>
+                        {r.get('body', '')}<br>
+                        <a href="{r.get('href', '')}" target="_blank">{r.get('href', '')}</a>
+                        </div>""",
+                        unsafe_allow_html=True
+                    )
 
 # 创建与AI大模型交互的客户端对象（DEEPSEEK_API_KEY 环境变量的名字，值就是DeepSeek的API_KEY的）
 client = OpenAI(api_key=os.environ.get('DEEPSEEK_API_KEY'), base_url="https://api.deepseek.com") 
@@ -257,33 +285,54 @@ if prompt:
     st.chat_message("user").write(prompt)
     print('-------->调用LLM,提示词:', prompt)
 
-    # 联网搜索：将搜索结果注入用户消息
-    user_content = prompt
+    # 联网搜索
+    search_results = None
     if web_search_enabled:
         with st.spinner("🔍 正在联网搜索..."):
             search_results = search_web(prompt)
             if search_results:
-                search_text = "\n\n【以下是从互联网搜索到的相关信息，请参考这些信息回答用户的问题】\n"
-                for i, result in enumerate(search_results, 1):
-                    search_text += f"\n[{i}] {result.get('title', '无标题')}\n{result.get('body', '无内容')}\n来源: {result.get('href', '无链接')}\n"
-                user_content = f"{prompt}\n{search_text}"
-                st.info(f"已搜索到 {len(search_results)} 条相关信息", icon="🔍")
+                with st.expander(f"🔍 已搜索到 {len(search_results)} 条相关信息，点击展开/收起", expanded=False):
+                    for i, r in enumerate(search_results, 1):
+                        st.markdown(
+                            f"""<div class="search-box">
+                            <b>[{i}] {r.get('title', '')}</b><br>
+                            {r.get('body', '')}<br>
+                            <a href="{r.get('href', '')}" target="_blank">{r.get('href', '')}</a>
+                            </div>""",
+                            unsafe_allow_html=True
+                        )
             else:
                 st.warning("未搜索到相关信息，将直接回答", icon="⚠️")
 
-    # 将用户输入的消息添加到聊天信息中
-    st.session_state.messages.append({"role": "user", "content": user_content})
+    # 将用户消息（不含搜索内容）添加到聊天信息中
+    st.session_state.messages.append({
+        "role": "user",
+        "content": prompt,
+        "search_results": search_results  # 搜索内容单独存储
+    })
 
-    # 替换系统提示词中的模板变量
-    formatted_system_prompt = st.session_state.system_prompt.replace("{nike_name}", st.session_state.nike_name).replace("{nature}", st.session_state.nature)
+    # 如果用户清空了人设，用昵称+性格自动生成简洁人设
+    raw_prompt = st.session_state.system_prompt.strip()
+    if not raw_prompt:
+        raw_prompt = f"你的名字是：{st.session_state.nike_name}。你的性格特点：{st.session_state.nature}。请以这个身份和用户对话，语气和风格要符合你的性格特点。"
+    formatted_system_prompt = raw_prompt.replace("{nike_name}", st.session_state.nike_name).replace("{nature}", st.session_state.nature)
+
+    # 构建LLM消息列表：有搜索结果的用户消息，自动注入搜索内容
+    llm_messages = [{"role": "system", "content": formatted_system_prompt}]
+    for msg in st.session_state.messages:
+        if msg.get("search_results"):
+            # 动态注入搜索内容到用户消息中
+            search_text = "\n\n【以下是从互联网搜索到的相关信息，请参考这些信息回答用户的问题】\n"
+            for i, r in enumerate(msg["search_results"], 1):
+                search_text += f"\n[{i}] {r.get('title', '')}\n{r.get('body', '')}\n来源: {r.get('href', '')}\n"
+            llm_messages.append({"role": msg["role"], "content": f"{msg['content']}\n{search_text}"})
+        else:
+            llm_messages.append({"role": msg["role"], "content": msg["content"]})
 
     # 与AI大模型进行交互(参数)
     response = client.chat.completions.create(
         model="deepseek-v4-flash",
-        messages=[
-            {"role": "system", "content": formatted_system_prompt},
-            *st.session_state.messages
-        ],
+        messages=llm_messages,
         stream=True
     )
 
@@ -298,7 +347,8 @@ if prompt:
         if chunk.choices[0].delta.content is not None:
             content = chunk.choices[0].delta.content
             full_response += content
-            response_message.chat_message("assistant").write(full_response)  # 更新占位符中的内容
+            # 转义波浪号，防止 markdown 渲染为删除线
+            response_message.chat_message("assistant").write(full_response.replace("~", "\\~"))
 
 
     # 将AI大模型返回的结果添加到聊天信息中
